@@ -12,7 +12,7 @@ self.APP_CONFIG = {
     appId: "1:89130787396:web:158cc3a7d23d34359e9211"
   },
   // Firebase Console › App Check › Apps › reCAPTCHA v3: chave do SITE (a chave secreta fica só no console)
-  appCheckSiteKey: "",
+  appCheckSiteKey: "6Ld5ezIuAAAAABIKjB5aCjRNsFzcjSq3cjsiSleV",
   // Google AdSense: ID do editor e IDs dos blocos de anúncio (Anúncios › Por bloco de anúncios › Display)
   adsense: {
     client: "",                 // ex.: "ca-pub-1234567890123456"
