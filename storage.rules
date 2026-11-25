@@ -1,0 +1,7 @@
+rules_version = '2';
+// O Meu Ponto não usa o Cloud Storage. Bloqueado por completo.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{all=**} { allow read, write: if false; }
+  }
+}

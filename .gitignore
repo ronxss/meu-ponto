@@ -1,0 +1,10 @@
+node_modules/
+.firebase/
+.firebaserc
+*.service-account.json
+conta-de-servico*.json
+*-firebase-adminsdk-*.json
+.env
+.env.*
+firebase-debug.log
+firestore-debug.log

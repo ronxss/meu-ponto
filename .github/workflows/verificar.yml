@@ -1,0 +1,18 @@
+# Roda em todo push/PR: testes e checagens de segurança simples.
+name: Verificar
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm test
+      - name: Nenhuma chave privada no repositório
+        run: |
+          if grep -rIlE -- '-----BEGIN (RSA |EC )?PRIVATE KEY-----|"private_key"\s*:' --exclude-dir=.git --exclude-dir=test --exclude-dir=.github . ; then
+            echo "::error::Encontrei uma chave privada versionada. Remova, troque a chave no Google Cloud e limpe o histórico."; exit 1
+          fi

@@ -1,0 +1,50 @@
+# Publica o app e as regras sem precisar de computador: Actions › Publicar › Run workflow.
+# Configure em Settings › Secrets and variables › Actions:
+#   Secret   FIREBASE_SERVICE_ACCOUNT  conteúdo do JSON da conta de serviço (papel "Administrador do Firebase")
+#   Variable FIREBASE_PROJECT_ID       ID do projeto Firebase (ex.: meu-ponto-123)
+name: Publicar
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['docs/**', 'firestore.rules', 'firebase.json']
+
+permissions:
+  contents: read
+
+concurrency: { group: publicar, cancel-in-progress: false }
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm test
+
+  firebase:
+    name: App e regras (Firebase)
+    needs: testes
+    runs-on: ubuntu-latest
+    environment: producao
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Conferir segredo e projeto
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          PROJ: ${{ vars.FIREBASE_PROJECT_ID }}
+        run: |
+          if [ -z "$SA" ]; then echo "::error::Falta o segredo FIREBASE_SERVICE_ACCOUNT"; exit 1; fi
+          if [ -z "$PROJ" ]; then echo "::error::Falta a variável FIREBASE_PROJECT_ID"; exit 1; fi
+          umask 077
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+          node -e "JSON.parse(require('fs').readFileSync(process.argv[1]))" "$RUNNER_TEMP/sa.json" || { echo "::error::O segredo não é um JSON válido"; exit 1; }
+      - name: Publicar no Firebase
+        run: npx -y firebase-tools@13.29.1 deploy --only hosting,firestore:rules --project "${{ vars.FIREBASE_PROJECT_ID }}" --non-interactive
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+      - run: rm -f "$RUNNER_TEMP/sa.json"
+        if: always()
