@@ -2,7 +2,9 @@
 name = "meu-ponto-notificador"
 main = "notifier/worker.mjs"
 compatibility_date = "2026-11-01"
-workers_dev = true
+# Sem endereço público: o Worker só roda pelo agendamento (mais seguro e não exige subdomínio workers.dev).
+# Para usar o teste por /run, registre um subdomínio em Workers e Pages e troque para true.
+workers_dev = false
 
 [triggers]
 crons = ["* * * * *"]

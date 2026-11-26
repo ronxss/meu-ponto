@@ -91,7 +91,7 @@ O app só carrega anúncios depois que a pessoa escolhe no aviso de consentiment
    - No iPhone, só funciona com o app instalado na Tela de Início (iOS 16.4+) e aberto pelo ícone.
    - O lembrete da volta do almoço precisa da **saída para o almoço** registrada (modo *Completo*). O da saída usa a previsão do app.
 
-Testar o notificador na hora: `curl -H "x-run-key: SUA_RUN_KEY" https://meu-ponto-notificador.SEU-USUARIO.workers.dev/run`
+Para ver se está rodando: Cloudflare › **Workers e Pages** › `meu-ponto-notificador` › **Logs** (uma linha por minuto com `usuarios`/`enviados`). O Worker não tem endereço público (`workers_dev = false`); para testar por `/run` com a `RUN_KEY`, registre um subdomínio `workers.dev` e mude para `true` em `wrangler.toml`.
 
 ### 6. Instalar no celular
 - **Android/Chrome**: menu ⋮ › *Instalar app*.
