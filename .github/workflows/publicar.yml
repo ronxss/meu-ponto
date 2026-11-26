@@ -88,17 +88,25 @@ jobs:
         run: |
           if [ -z "$ACC" ]; then echo "::error::Falta o segredo CLOUDFLARE_ACCOUNT_ID"; exit 1; fi
           if [ ${#RK} -lt 16 ]; then echo "::error::O segredo RUN_KEY precisa ter pelo menos 16 caracteres"; exit 1; fi
+      - uses: actions/setup-node@v4
+        if: env.CF != ''
+        with: { node-version: 22 }
+      # Comandos diretos (em vez da action) para o erro do Wrangler aparecer no log.
       - name: Publicar o Worker
         if: env.CF != ''
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          secrets: |
-            FIREBASE_SERVICE_ACCOUNT
-            RUN_KEY
         env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.NOTIFIER_SERVICE_ACCOUNT || secrets.FIREBASE_SERVICE_ACCOUNT }}
-          RUN_KEY: ${{ secrets.RUN_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx -y wrangler@3.90.0 deploy
+      - name: Gravar segredos do Worker
+        if: env.CF != ''
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SA: ${{ secrets.NOTIFIER_SERVICE_ACCOUNT || secrets.FIREBASE_SERVICE_ACCOUNT }}
+          RK: ${{ secrets.RUN_KEY }}
+        run: |
+          printf '%s' "$SA" | npx -y wrangler@3.90.0 secret put FIREBASE_SERVICE_ACCOUNT
+          printf '%s' "$RK" | npx -y wrangler@3.90.0 secret put RUN_KEY
       - if: env.CF == ''
         run: echo "Sem CLOUDFLARE_API_TOKEN, o notificador não foi publicado (os lembretes não serão enviados)."
