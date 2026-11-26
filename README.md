@@ -2,9 +2,9 @@
 
 App (PWA) feito a partir do artefato **Calculadora de Ponto**, aberto ao público e mantido por **anúncios (Google AdSense)**.
 
-- **Calculadora**: modo *Simples* (entrada + tempo de almoço) e *Completo* (saída/volta do almoço reais), contagem regressiva, limite com 2h extras e avisos de intervalo da CLT.
-- **Registro do dia**: grava a saída e calcula horas trabalhadas e saldo.
-- **Histórico e banco de horas** por mês, com exportação em CSV.
+- **Bater ponto com um toque**: a tela principal tem um único botão que registra, na ordem, **entrada → saída para o almoço → retorno do almoço → saída**, mostra a saída prevista e quanto falta. Dá para desfazer o último registro e marcar "hoje sem almoço".
+- **Jornada configurada uma vez** no primeiro acesso (horas por dia + tempo de almoço); muda em **Ajustes**.
+- **Histórico e banco de horas** por mês, com correção de dias (ou lançamento de dia esquecido) e exportação em CSV.
 - **Lançamentos só com login** (e-mail/senha com e-mail verificado, ou Google): sincroniza entre aparelhos; cada pessoa só enxerga os próprios dados. A cópia offline fica separada por conta e é apagada ao sair.
 - **Lembretes por notificação 2 min antes** de bater o ponto de **volta do almoço** e de **saída**, com o app fechado (Android, computador e iPhone com o app instalado na Tela de Início).
 - **Funciona offline** e instala como app (Android, iPhone e computador).
@@ -87,9 +87,9 @@ O app só carrega anúncios depois que a pessoa escolhe no aviso de consentiment
    - `CLOUDFLARE_ACCOUNT_ID` = o ID da conta
    - `RUN_KEY` = uma senha longa qualquer (16+ caracteres), para testar o notificador
 4. Rode Actions › **Publicar**. O job *Notificador* publica o Worker `meu-ponto-notificador`, que roda a cada minuto.
-5. No app: **Conta › Lembretes › Ativar neste aparelho** e depois **Enviar teste** (chega em até 1 minuto).
+5. No app: **Ajustes › Lembretes › Ativar neste aparelho** e depois **Enviar teste** (chega em até 1 minuto).
    - No iPhone, só funciona com o app instalado na Tela de Início (iOS 16.4+) e aberto pelo ícone.
-   - O lembrete da volta do almoço precisa da **saída para o almoço** registrada (modo *Completo*). O da saída usa a previsão do app.
+   - O lembrete do retorno do almoço é agendado quando você registra a **saída para o almoço**; o da saída usa a previsão do app e é recalculado no retorno.
 
 Para ver se está rodando: Cloudflare › **Workers e Pages** › `meu-ponto-notificador` › **Logs** (uma linha por minuto com `usuarios`/`enviados`). O Worker não tem endereço público (`workers_dev = false`); para testar por `/run` com a `RUN_KEY`, registre um subdomínio `workers.dev` e mude para `true` em `wrangler.toml`.
 

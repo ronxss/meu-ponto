@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1f6f5c">
-<meta name="description" content="Calcule a hora de sair do trabalho, registre seus pontos e acompanhe o banco de horas. Grátis.">
+<meta name="description" content="Bata o ponto com um toque, receba lembretes da volta do almoço e da saída e acompanhe seu banco de horas. Grátis.">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Meu Ponto">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<title>Meu Ponto — que horas eu saio?</title>
+<title>Meu Ponto</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -60,77 +60,33 @@
     <p class="hint center"><a href="privacidade.html">Política de privacidade</a></p>
   </section>
 
-  <!-- ===== HOJE ===== -->
-  <section id="v-hoje" class="view hide">
-    <div class="card">
-      <div class="row">
-        <div class="field"><label for="dia">Dia</label><input type="date" id="dia"></div>
-        <button class="now" type="button" id="hojeBtn">Hoje</button>
-      </div>
-      <label for="jornada">Jornada do dia (sem contar almoço)</label>
-      <input type="time" id="jornada" value="08:00">
-      <div class="chips" id="chipsJ">
-        <button type="button" data-v="06:00">6h</button>
-        <button type="button" data-v="08:00">8h</button>
-        <button type="button" data-v="08:48">8h48</button>
-        <button type="button" data-v="09:00">9h</button>
-      </div>
+  <!-- ===== CONFIGURAÇÃO INICIAL (uma vez) ===== -->
+  <section id="v-config" class="view hide">
+    <p class="intro">👋 Bem-vindo! Antes do primeiro ponto, informe sua jornada. Você só faz isso uma vez — dá para mudar depois em <b>Ajustes</b>.</p>
+    <div id="slotConfig"></div>
+  </section>
+
+  <!-- ===== PONTO ===== -->
+  <section id="v-ponto" class="view hide">
+    <div class="relogio">
+      <div class="data" id="pData"></div>
+      <div class="hora" id="pHora">--:--</div>
     </div>
 
-    <div class="seg" role="tablist">
-      <button id="tabS" class="on" type="button">Simples</button>
-      <button id="tabC" type="button">Completo</button>
-    </div>
+    <button type="button" class="bater" id="bBater">
+      <span id="bBaterTit">Registrar entrada</span>
+      <small id="bBaterSub">Toque para bater o ponto</small>
+    </button>
+    <p class="msg center" id="msgPonto" role="status"></p>
+    <button type="button" class="link hide" id="bSemAlm">Hoje não vou fazer intervalo de almoço</button>
 
-    <div class="card">
-      <div class="row">
-        <div class="field"><label for="entrada">Entrada</label><input type="time" id="entrada"></div>
-        <button class="now" type="button" data-t="entrada">Agora</button>
-      </div>
-
-      <label for="intervalo">Tempo de almoço</label>
-      <input type="time" id="intervalo" value="01:00">
-      <div class="chips" id="chipsI">
-        <button type="button" data-v="00:00">Sem</button>
-        <button type="button" data-v="00:30">30min</button>
-        <button type="button" data-v="01:00">1h</button>
-        <button type="button" data-v="01:30">1h30</button>
-        <button type="button" data-v="02:00">2h</button>
-      </div>
-
-      <div id="completo" class="hide">
-        <div class="row mt">
-          <div class="field"><label for="saiAlm">Saída para o almoço</label><input type="time" id="saiAlm"></div>
-          <button class="now" type="button" data-t="saiAlm">Agora</button>
-        </div>
-        <div class="row">
-          <div class="field"><label for="volAlm">Volta do almoço</label><input type="time" id="volAlm"></div>
-          <button class="now" type="button" data-t="volAlm">Agora</button>
-        </div>
-        <p class="hint">Se ainda não voltou do almoço, uso o tempo de almoço acima como previsão.</p>
-      </div>
-    </div>
-
-    <div class="result empty" id="res">
-      <div class="lbl">Encerrar jornada às</div>
-      <div class="big" id="saidaPrev">--:--</div>
-      <div class="sub" id="falta">Preencha a hora de entrada</div>
-      <div class="details hide" id="det"></div>
-    </div>
-    <p class="hint center" id="avisoHint"></p>
+    <ol class="linha" id="linha"></ol>
+    <div class="resumo" id="resumo"></div>
     <div class="warn hide" id="warn"></div>
+    <p class="hint center" id="avisoHint"></p>
 
-    <div class="card mt">
-      <div class="row">
-        <div class="field"><label for="saida">Saída (registrar quando bater o ponto)</label><input type="time" id="saida"></div>
-        <button class="now" type="button" data-t="saida">Agora</button>
-      </div>
-      <p class="hint" id="fechHint">Com a saída registrada, o dia entra no banco de horas.</p>
-    </div>
-
+    <button type="button" class="link hide" id="bDesfazer">Desfazer último registro</button>
     <div class="ad" data-slot="hoje" aria-label="Publicidade"></div>
-
-    <button class="link" type="button" id="limpar">Limpar horários deste dia</button>
   </section>
 
   <!-- ===== HISTÓRICO ===== -->
@@ -146,25 +102,65 @@
         <div><small>Banco de horas</small><b id="tSaldo">0min</b></div>
       </div>
     </div>
-    <ul class="lista" id="lista"></ul>
+    <div class="card hide" id="cEditar">
+      <h2 id="eTit">Editar dia</h2>
+      <label for="eDia">Dia</label>
+      <input type="date" id="eDia">
+      <div class="grade mt">
+        <div><label for="eEntrada">Entrada</label><input type="time" id="eEntrada"></div>
+        <div><label for="eSaiAlm">Saída almoço</label><input type="time" id="eSaiAlm"></div>
+        <div><label for="eVolAlm">Retorno almoço</label><input type="time" id="eVolAlm"></div>
+        <div><label for="eSaida">Saída</label><input type="time" id="eSaida"></div>
+      </div>
+      <div class="btns">
+        <button type="button" class="pri" id="eSalvar">Salvar</button>
+        <button type="button" class="sec" id="eCancelar">Cancelar</button>
+        <button type="button" class="danger hide" id="eExcluir">Excluir dia</button>
+      </div>
+      <p class="msg" id="msgEditar" role="status"></p>
+    </div>
+    <button type="button" class="sec full" id="bNovoDia">＋ Lançar ou corrigir um dia</button>
+    <ul class="lista mt" id="lista"></ul>
     <p class="hint center hide" id="vazio">Nenhum dia registrado neste mês.</p>
+    <p class="hint center">Toque em um dia para corrigir os horários.</p>
     <div class="ad" data-slot="hist" aria-label="Publicidade"></div>
   </section>
 
   <!-- ===== CONTA ===== -->
-  <section id="v-conta" class="view hide">
-    <div class="card" id="cConta">
-      <h2>Sua conta</h2>
-      <p>Conectado como <b id="quem"></b></p>
-      <p class="hint">Seus horários ficam guardados com segurança e só você tem acesso.</p>
-      <div class="btns"><button type="button" class="sec" id="bSair">Sair</button></div>
+  <section id="v-ajustes" class="view hide">
+    <div id="slotAjustes">
+    <div class="card" id="cJornada">
+      <h2>⏰ Sua jornada</h2>
+      <label for="jornada" class="mt">Horas de trabalho por dia (sem contar o almoço)</label>
+      <input type="time" id="jornada" value="08:00">
+      <div class="chips" id="chipsJ">
+        <button type="button" data-v="04:00">4h</button>
+        <button type="button" data-v="06:00">6h</button>
+        <button type="button" data-v="08:00">8h</button>
+        <button type="button" data-v="08:48">8h48</button>
+        <button type="button" data-v="09:00">9h</button>
+      </div>
+      <label for="intervalo" class="mt">Tempo de almoço</label>
+      <input type="time" id="intervalo" value="01:00">
+      <div class="chips" id="chipsI">
+        <button type="button" data-v="00:00">Sem</button>
+        <button type="button" data-v="00:15">15min</button>
+        <button type="button" data-v="00:30">30min</button>
+        <button type="button" data-v="01:00">1h</button>
+        <button type="button" data-v="01:30">1h30</button>
+        <button type="button" data-v="02:00">2h</button>
+      </div>
+      <p class="hint" id="jResumo"></p>
+      <div class="btns"><button type="button" class="pri" id="jSalvar">Salvar</button></div>
+      <p class="msg" id="msgJornada" role="status"></p>
+    </div>
     </div>
 
     <div class="card" id="cNotif">
       <h2>🔔 Lembretes</h2>
       <p class="hint">Receba uma notificação <b>2 minutos antes</b> de bater o ponto, mesmo com o app fechado.</p>
-      <label class="tog"><input type="checkbox" id="nAlm" checked> Volta do almoço <small>(precisa registrar a saída para o almoço)</small></label>
-      <label class="tog"><input type="checkbox" id="nSai" checked> Saída (fim da jornada)</label>
+      <label class="tog"><input type="checkbox" id="nAlm" checked><span>Retorno do almoço<small>2 min antes do horário de voltar</small></span></label>
+      <label class="tog"><input type="checkbox" id="nSai" checked><span>Saída<small>2 min antes do fim da jornada</small></span></label>
       <p class="hint" id="nEstado"></p>
       <div class="btns">
         <button type="button" class="pri" id="nAtivar">Ativar neste aparelho</button>
@@ -172,6 +168,13 @@
         <button type="button" class="sec hide" id="nDesativar">Desativar neste aparelho</button>
       </div>
       <p class="msg" id="msgNotif" role="status"></p>
+    </div>
+
+    <div class="card" id="cConta">
+      <h2>👤 Sua conta</h2>
+      <p>Conectado como <b id="quem"></b></p>
+      <p class="hint">Seus horários ficam guardados com segurança e só você tem acesso.</p>
+      <div class="btns"><button type="button" class="sec" id="bSair">Sair</button></div>
     </div>
 
     <div class="card">
@@ -203,9 +206,9 @@
 </div>
 
 <nav class="tabs" aria-label="Seções">
-  <a href="#hoje" data-tab="hoje"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/></svg>Hoje</a>
+  <a href="#ponto" data-tab="ponto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/></svg>Ponto</a>
   <a href="#hist" data-tab="hist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>Histórico</a>
-  <a href="#conta" data-tab="conta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Conta</a>
+  <a href="#ajustes" data-tab="ajustes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h9M18 7h2M4 17h3M12 17h8"/><circle cx="15.5" cy="7" r="2.3"/><circle cx="9.5" cy="17" r="2.3"/></svg>Ajustes</a>
 </nav>
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>

@@ -1,10 +1,10 @@
 {
   "name": "Meu Ponto",
   "short_name": "Meu Ponto",
-  "description": "Que horas eu saio? Calcule a saída, registre o ponto e acompanhe o banco de horas.",
+  "description": "Bata o ponto com um toque, receba lembretes da volta do almoço e da saída e acompanhe o banco de horas.",
   "lang": "pt-BR",
   "id": "./",
-  "start_url": "./#hoje",
+  "start_url": "./#ponto",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f6f5f2",

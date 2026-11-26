@@ -4,7 +4,7 @@
 (function () {
   'use strict';
   const P = window.Ponto, CFG = window.APP_CONFIG || {};
-  const VERSAO = '1.0.0';
+  const VERSAO = '2.0.0';
   const $ = id => document.getElementById(id);
   const ls = {
     get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
@@ -18,78 +18,152 @@
   const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
 
   // ---------- estado ----------
-  let cfg = Object.assign({ jornada: '08:00', intervalo: '01:00', modo: 'S' }, ls.get('mp_cfg', {}));
-  let dias = {};                               // { 'AAAA-MM-DD': {entrada,...,t} } da conta logada
-  let diaAtual = chaveDia(new Date());
+  const CFG_PADRAO = { jornada: '08:00', intervalo: '01:00', ok: false };
+  let cfg = Object.assign({}, CFG_PADRAO);     // jornada da conta logada (ok = já configurou)
+  let dias = {};                               // { 'AAAA-MM-DD': {entrada,saiAlm,volAlm,saida,jornada,intervalo,t} }
   let db = null, user = null, unsub = null;
-
-  // ---------- Hoje ----------
-  function carregarDia(k) {
-    diaAtual = k; $('dia').value = k;
-    const r = dias[k] || {};
-    HORAS.forEach(c => { $(c).value = r[c] || ''; });
-    $('jornada').value = r.jornada || cfg.jornada;
-    $('intervalo').value = r.intervalo || cfg.intervalo;
-    calc();
-  }
 
   const liberado = () => !!(user && user.emailVerified);
   const chaveLocal = () => 'mp_dias_' + user.uid;
+  const chaveCfg = () => 'mp_cfg_' + user.uid;
+  const dataBR = k => { const [a, m, d] = k.split('-'); return d + '/' + m + '/' + a; };
+  const SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 
-  function gravarDia() {
-    if (!liberado()) return; // sem login não há lançamento
-    const r = {};
-    CAMPOS.forEach(c => { const v = $(c).value; if (P.HORA.test(v)) r[c] = v; });
-    const vazio = !HORAS.some(c => r[c]);
-    if (vazio) delete dias[diaAtual]; else { r.t = Date.now(); dias[diaAtual] = r; }
+  // ---------- Ponto: um botão, quatro registros ----------
+  const ETAPAS = [
+    { c: 'entrada', nome: 'Entrada', acao: 'Registrar entrada', g: 'a' },
+    { c: 'saiAlm', nome: 'Saída para o almoço', acao: 'Registrar saída para o almoço', g: 'a' },
+    { c: 'volAlm', nome: 'Retorno do almoço', acao: 'Registrar retorno do almoço', g: 'o' },
+    { c: 'saida', nome: 'Saída', acao: 'Registrar saída', g: 'a' }
+  ];
+  // Sem intervalo (jornada sem almoço ou "hoje não vou almoçar"): pula as etapas do almoço.
+  const semAlmoco = r => r.intervalo === '00:00' && !r.saiAlm;
+  const etapasDo = r => ETAPAS.filter(e => !(semAlmoco(r) && (e.c === 'saiAlm' || e.c === 'volAlm')));
+  const proxima = r => etapasDo(r).find(e => !r[e.c]) || null;
+
+  // Dia de trabalho em andamento: hoje, ou ontem se o turno virou a meia-noite e ainda não saiu.
+  function diaAtivo() {
+    const h = new Date(), kH = chaveDia(h), kO = chaveDia(new Date(h.getFullYear(), h.getMonth(), h.getDate() - 1));
+    const o = dias[kO];
+    if (!(dias[kH] && dias[kH].entrada) && o && o.entrada && !o.saida && (1440 + nowMin()) - P.toMin(o.entrada) < 18 * 60) return kO;
+    return kH;
+  }
+
+  function salvarDia(k, r) {
+    if (!liberado() || !DIA_RE.test(k)) return;
+    const limpo = {};
+    CAMPOS.forEach(c => { if (P.HORA.test(r[c] || '')) limpo[c] = r[c]; });
+    if (!HORAS.some(c => limpo[c])) delete dias[k]; else { limpo.t = Date.now(); dias[k] = limpo; }
     ls.set(chaveLocal(), dias);
-    Notif.agendar();
-    cfg.jornada = $('jornada').value || cfg.jornada; cfg.intervalo = $('intervalo').value || cfg.intervalo;
-    ls.set('mp_cfg', cfg);
-    agendarEnvio(diaAtual); agendarPerfil();
+    agendarEnvio(k); Notif.agendar();
   }
 
-  function setModo(m) {
-    cfg.modo = m; ls.set('mp_cfg', cfg);
-    $('tabS').classList.toggle('on', m === 'S'); $('tabC').classList.toggle('on', m === 'C');
-    $('completo').classList.toggle('hide', m !== 'C');
-    calc(); agendarPerfil(); Notif.agendar();
+  let travado = false;
+  function bater() {
+    if (!liberado() || travado) return;
+    const k = diaAtivo(), r = Object.assign({}, dias[k] || {});
+    if (!r.entrada) { r.jornada = cfg.jornada; r.intervalo = cfg.intervalo; }
+    const e = proxima(r); if (!e) return;
+    const h = P.fmt(nowMin());
+    r[e.c] = h; salvarDia(k, r);
+    travado = true; $('bBater').disabled = true;          // evita toque duplo
+    setTimeout(() => { travado = false; renderPonto(); }, 2500);
+    msg('msgPonto', '✓ ' + e.nome + ' registrad' + e.g + ' às ' + h, 'ok');
+    if (navigator.vibrate) try { navigator.vibrate(40); } catch (x) {}
+    renderPonto();
   }
 
+  function semAlmocoHoje() {
+    const k = diaAtivo(), r = Object.assign({}, dias[k] || {});
+    if (!r.entrada || r.saiAlm) return;
+    if (!confirm('Registrar o dia de hoje sem intervalo de almoço? O próximo registro será a saída.')) return;
+    r.intervalo = '00:00'; salvarDia(k, r); renderPonto();
+  }
+
+  function desfazer() {
+    const k = diaAtivo(), r = Object.assign({}, dias[k] || {});
+    const feitas = ETAPAS.filter(e => r[e.c]); if (!feitas.length) return;
+    const u = feitas[feitas.length - 1];
+    if (!confirm('Desfazer "' + u.nome + ' às ' + r[u.c] + '"?')) return;
+    delete r[u.c];
+    salvarDia(k, r); msg('msgPonto', 'Registro desfeito.', ''); renderPonto();
+  }
+
+  function renderPonto() {
+    const agora = new Date();
+    $('pData').textContent = agora.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+    $('pHora').textContent = P.fmt(nowMin());
+    if (!liberado()) return;
+    const k = diaAtivo(), r = dias[k] || { jornada: cfg.jornada, intervalo: cfg.intervalo };
+    const e = proxima(r), b = $('bBater');
+    b.classList.toggle('fim', !e);
+    b.disabled = !e || travado;
+    $('bBaterTit').textContent = e ? e.acao : 'Jornada concluída ✓';
+    $('bBaterSub').textContent = e ? 'Toque para bater o ponto agora' : 'Bom descanso! Até amanhã.';
+    $('bSemAlm').classList.toggle('hide', !(e && e.c === 'saiAlm'));
+    $('bDesfazer').classList.toggle('hide', !ETAPAS.some(x => r[x.c]));
+
+    // Linha do dia: registrados e previstos
+    const p = r.entrada ? P.previsao(r, 'C') : null;
+    const prev = {};
+    if (p) {
+      if (r.saiAlm && !r.volAlm) prev.volAlm = P.fmt(P.toMin(r.saiAlm) + (P.toMin(r.intervalo) ?? 0));
+      if (!r.saida) prev.saida = P.fmt(p.saida);
+    }
+    const itens = ETAPAS.map(x => {
+      const li = el('li'), pulado = semAlmoco(r) && (x.c === 'saiAlm' || x.c === 'volAlm');
+      li.className = r[x.c] ? 'ok' : pulado ? 'pulado' : (e && e.c === x.c ? 'prox' : '');
+      li.append(el('span', 'pt'), el('span', 'nm', x.nome),
+        r[x.c] ? el('span', 'hr', r[x.c]) : el('span', 'hr prev', pulado ? 'sem almoço' : prev[x.c] ? 'prev. ' + prev[x.c] : '--:--'));
+      return li;
+    });
+    $('linha').replaceChildren(...itens);
+
+    const res = $('resumo'); res.replaceChildren();
+    const f = P.fechamento(r);
+    if (f) {
+      res.append('Trabalhado ', el('b', '', P.dur(f.trabalhado)), ' · saldo ',
+        el('b', f.saldo >= 0 ? 'pos' : 'neg', (f.saldo > 0 ? '+' : '') + P.dur(f.saldo)));
+    } else if (p) {
+      let n = nowMin(); if (k !== chaveDia(agora)) n += 1440;
+      const rest = p.saida - n;
+      res.append('Saída prevista às ', el('b', '', P.fmt(p.saida)), rest > 0 ? ' · faltam ' + P.dur(rest) : ' · jornada cumprida 🎉');
+    } else {
+      res.append('Jornada de ', el('b', '', P.dur(P.toMin(cfg.jornada))));
+      if (cfg.intervalo === '00:00') res.append(' sem intervalo');
+      else res.append(' + ', el('b', '', P.dur(P.toMin(cfg.intervalo))), ' de almoço');
+    }
+    const warn = $('warn');
+    const av = p && r.volAlm ? p.avisos : [];
+    warn.classList.toggle('hide', !av.length);
+    warn.replaceChildren(...av.map(a => el('div', '', a)));
+    Notif.dica();
+  }
+
+  // ---------- Jornada (configuração inicial e Ajustes) ----------
   function syncChips() {
     [['chipsJ', 'jornada'], ['chipsI', 'intervalo']].forEach(([c, f]) =>
       document.querySelectorAll('#' + c + ' button').forEach(b => b.classList.toggle('on', b.dataset.v === $(f).value)));
+    const J = P.toMin($('jornada').value), I = P.toMin($('intervalo').value);
+    $('jResumo').textContent = J ? 'Ex.: entrando às 08:00, a saída prevista é ' + P.fmt(480 + J + (I || 0)) + '.' : '';
   }
+  function mostrarJornada() { $('jornada').value = cfg.jornada; $('intervalo').value = cfg.intervalo; syncChips(); }
 
-  function calc() {
-    syncChips();
-    const d = {}; CAMPOS.forEach(c => d[c] = $(c).value);
-    const p = P.previsao(d, cfg.modo), res = $('res'), det = $('det'), warn = $('warn');
-    warn.classList.add('hide');
-    if (!p) {
-      res.classList.add('empty'); $('saidaPrev').textContent = '--:--';
-      $('falta').textContent = 'Preencha a hora de entrada'; det.classList.add('hide');
-    } else {
-      res.classList.remove('empty');
-      $('saidaPrev').textContent = P.fmt(p.saida) + (p.saida >= 1440 ? ' ⁺¹' : '');
-      if (diaAtual === chaveDia(new Date())) {
-        let n = nowMin(); if (n < p.entrada - 60) n += 1440;
-        const rest = p.saida - n;
-        $('falta').textContent = rest > 0 ? 'Faltam ' + P.dur(rest) : rest === 0 ? 'É agora! Pode bater o ponto 🎉' : 'Jornada cumprida há ' + P.dur(-rest) + ' 🎉';
-      } else $('falta').textContent = 'Previsão para ' + dataBR(diaAtual);
-      det.replaceChildren(...p.linhas.map(([a, b]) => { const r = el('div'); r.append(el('span', '', a), el('span', '', b)); return r; }));
-      det.classList.remove('hide');
-      if (p.avisos.length) { warn.replaceChildren(...p.avisos.map(a => el('div', '', a))); warn.classList.remove('hide'); }
-    }
-    Notif.dica();
-    const f = P.fechamento(d);
-    $('fechHint').textContent = f
-      ? 'Trabalhado: ' + P.dur(f.trabalhado) + ' · saldo do dia: ' + (f.saldo > 0 ? '+' : '') + P.dur(f.saldo)
-      : 'Com a saída registrada, o dia entra no banco de horas.';
+  async function salvarJornada() {
+    const j = $('jornada').value, i = $('intervalo').value || '00:00';
+    if (!P.HORA.test(j) || P.toMin(j) < 60) { msg('msgJornada', 'Informe a jornada (pelo menos 1 hora).', 'err'); return; }
+    if (!P.HORA.test(i)) { msg('msgJornada', 'Informe o tempo de almoço.', 'err'); return; }
+    const primeira = !cfg.ok;
+    cfg = { jornada: j, intervalo: i, ok: true };
+    ls.set(chaveCfg(), cfg);
+    // Dia em andamento (ainda sem saída) passa a usar a jornada nova.
+    const k = diaAtivo(), r = dias[k];
+    if (r && r.entrada && !r.saida) salvarDia(k, Object.assign({}, r, { jornada: j, intervalo: r.saiAlm || r.intervalo !== '00:00' ? i : r.intervalo }));
+    enviarPerfil();
+    Notif.agendar();
+    if (primeira) { location.hash = '#ponto'; rota(); msg('msgPonto', 'Tudo pronto! Toque no botão para bater o ponto.', 'ok'); }
+    else msg('msgJornada', 'Jornada salva ✓', 'ok');
   }
-
-  const dataBR = k => { const [a, m, d] = k.split('-'); return d + '/' + m + '/' + a; };
-  const SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 
   // ---------- Histórico ----------
   function diasDoMes(mes) { return Object.keys(dias).filter(k => k.startsWith(mes)).sort().reverse(); }
@@ -107,7 +181,7 @@
       b.append(el('span', 'd', SEM[dt.getDay()] + ' ' + k.slice(8) + '/' + k.slice(5, 7)),
         el('span', 'h', (r.entrada || '--:--') + ' → ' + (r.saida || '--:--')),
         el('span', 's ' + (f ? (f.saldo >= 0 ? 'pos' : 'neg') : ''), f ? (f.saldo > 0 ? '+' : '') + P.dur(f.saldo) : 'aberto'));
-      b.onclick = () => { carregarDia(k); location.hash = '#hoje'; };
+      b.onclick = () => abrirEditor(k);
       li.append(b); return li;
     });
     $('lista').replaceChildren(...itens);
@@ -115,6 +189,42 @@
     $('tDias').textContent = nd; $('tTrab').textContent = P.dur(trab);
     const ts = $('tSaldo'); ts.textContent = (saldo > 0 ? '+' : '') + P.dur(saldo);
     ts.className = saldo >= 0 ? 'pos' : 'neg';
+  }
+
+  const EDIT = { entrada: 'eEntrada', saiAlm: 'eSaiAlm', volAlm: 'eVolAlm', saida: 'eSaida' };
+  let editando = null;
+  function abrirEditor(k) {
+    editando = k || null;
+    const dia = k || chaveDia(new Date()), r = dias[dia] || {};
+    $('eTit').textContent = k ? 'Corrigir ' + dataBR(k) : 'Lançar ou corrigir um dia';
+    $('eDia').value = dia; $('eDia').disabled = !!k;
+    Object.entries(EDIT).forEach(([c, id]) => { $(id).value = r[c] || ''; });
+    $('eExcluir').classList.toggle('hide', !k);
+    msg('msgEditar', '');
+    $('cEditar').classList.remove('hide'); $('bNovoDia').classList.add('hide');
+    $('cEditar').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  function fecharEditor() { editando = null; $('cEditar').classList.add('hide'); $('bNovoDia').classList.remove('hide'); }
+  $('eDia').addEventListener('change', () => {
+    const r = dias[$('eDia').value] || {};
+    Object.entries(EDIT).forEach(([c, id]) => { $(id).value = r[c] || ''; });
+  });
+  function salvarEditor() {
+    const k = editando || $('eDia').value;
+    if (!DIA_RE.test(k)) { msg('msgEditar', 'Escolha o dia.', 'err'); return; }
+    if (k > chaveDia(new Date())) { msg('msgEditar', 'Não dá para lançar um dia futuro.', 'err'); return; }
+    const v = {}; Object.entries(EDIT).forEach(([c, id]) => { v[c] = $(id).value; });
+    if (!v.entrada && (v.saiAlm || v.volAlm || v.saida)) { msg('msgEditar', 'Informe a entrada.', 'err'); return; }
+    if (!!v.saiAlm !== !!v.volAlm && v.saida) { msg('msgEditar', 'Preencha a saída e o retorno do almoço (ou deixe os dois vazios).', 'err'); return; }
+    const base = dias[k] || { jornada: cfg.jornada, intervalo: cfg.intervalo };
+    const r = Object.assign({}, base, v);
+    HORAS.forEach(c => { if (!r[c]) delete r[c]; });
+    if (r.saida && !r.saiAlm) r.intervalo = '00:00'; // dia fechado sem registros de almoço
+    salvarDia(k, r); fecharEditor(); renderHist(); renderPonto();
+  }
+  function excluirDia() {
+    if (!editando || !confirm('Excluir todos os registros de ' + dataBR(editando) + '?')) return;
+    salvarDia(editando, {}); fecharEditor(); renderHist(); renderPonto();
   }
 
   function baixar(nome, tipo, conteudo) {
@@ -126,7 +236,7 @@
 
   function exportarCSV() {
     const mes = $('mes').value || chaveDia(new Date()).slice(0, 7);
-    const linhas = [['Data', 'Entrada', 'Saída almoço', 'Volta almoço', 'Saída', 'Jornada', 'Trabalhado', 'Saldo']];
+    const linhas = [['Data', 'Entrada', 'Saída almoço', 'Retorno almoço', 'Saída', 'Jornada', 'Trabalhado', 'Saldo']];
     diasDoMes(mes).reverse().forEach(k => {
       const r = dias[k], f = P.fechamento(r);
       linhas.push([dataBR(k), r.entrada, r.saiAlm, r.volAlm, r.saida, r.jornada, f ? P.dur(f.trabalhado) : '', f ? P.dur(f.saldo) : '']);
@@ -135,16 +245,26 @@
   }
 
   // ---------- Navegação ----------
-  const VIEWS = { hoje: 'v-hoje', hist: 'v-hist', conta: 'v-conta' };
+  const VIEWS = { ponto: 'v-ponto', hist: 'v-hist', ajustes: 'v-ajustes' };
+  const ALIAS = { hoje: 'ponto', conta: 'ajustes' };
   function rota() {
     const ok = liberado();
-    document.body.classList.toggle('gate', !ok);
-    $('v-login').classList.toggle('hide', ok);
-    if (!ok) { Object.values(VIEWS).forEach(id => $(id).classList.add('hide')); return; }
-    const t = (location.hash || '#hoje').slice(1), tab = VIEWS[t] ? t : 'hoje';
-    Object.entries(VIEWS).forEach(([k, id]) => $(id).classList.toggle('hide', k !== tab));
+    const todas = ['v-login', 'v-config', ...Object.values(VIEWS)];
+    const mostrar = id => todas.forEach(v => $(v).classList.toggle('hide', v !== id));
+    if (!ok) { document.body.classList.add('gate'); mostrar('v-login'); return; }
+    if (!cfg.ok) { // primeira vez: configura a jornada antes de tudo
+      document.body.classList.add('gate'); $('slotConfig').append($('cJornada'));
+      $('jSalvar').textContent = 'Salvar e começar'; mostrarJornada(); mostrar('v-config'); return;
+    }
+    document.body.classList.remove('gate');
+    $('slotAjustes').prepend($('cJornada')); $('jSalvar').textContent = 'Salvar';
+    let t = (location.hash || '#ponto').slice(1); t = ALIAS[t] || t;
+    const tab = VIEWS[t] ? t : 'ponto';
+    mostrar(VIEWS[tab]);
     document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
-    if (tab === 'hist') renderHist();
+    if (tab === 'ponto') renderPonto();
+    if (tab === 'hist') { fecharEditor(); renderHist(); }
+    if (tab === 'ajustes') { mostrarJornada(); msg('msgJornada', ''); Notif.render(); }
     Ads.preencher(document.getElementById(VIEWS[tab]));
     window.scrollTo(0, 0);
   }
@@ -174,9 +294,8 @@
   };
   const erroTxt = e => ERROS[e && e.code] || 'Algo deu errado. Tente de novo.';
 
-  const pend = new Set(); let tEnvio = null, tPerfil = null;
-  function agendarEnvio(k) { if (!db || !user) return; pend.add(k); clearTimeout(tEnvio); tEnvio = setTimeout(enviar, 800); }
-  function agendarPerfil() { if (!db || !user) return; clearTimeout(tPerfil); tPerfil = setTimeout(enviarPerfil, 1500); }
+  const pend = new Set(); let tEnvio = null;
+  function agendarEnvio(k) { if (!db || !user) return; pend.add(k); clearTimeout(tEnvio); tEnvio = setTimeout(enviar, 500); }
   const refDias = () => db.collection('usuarios').doc(user.uid).collection('dias');
 
   async function enviar() {
@@ -195,16 +314,29 @@
     } catch (e) { ks.forEach(k => pend.add(k)); setSync('err', 'erro ao salvar'); }
   }
   async function enviarPerfil() {
+    if (!db || !liberado()) return;
     try {
       await db.collection('usuarios').doc(user.uid).set({
-        jornada: cfg.jornada, intervalo: cfg.intervalo, modo: cfg.modo,
+        jornada: cfg.jornada, intervalo: cfg.intervalo,
         atualizado: firebase.firestore.FieldValue.serverTimestamp()
       });
     } catch (e) {}
   }
+  // Jornada salva na conta (vale em qualquer aparelho). Sem internet, usa a cópia local.
+  async function carregarPerfil() {
+    try {
+      const perf = await db.collection('usuarios').doc(user.uid).get();
+      if (perf.exists) {
+        const p = perf.data();
+        if (P.HORA.test(p.jornada || '') && P.HORA.test(p.intervalo || '')) {
+          cfg = { jornada: p.jornada, intervalo: p.intervalo, ok: true }; ls.set(chaveCfg(), cfg);
+        }
+      }
+    } catch (e) {}
+  }
 
   // Mostra a tela certa conforme o estado do login.
-  function atualizarAcesso() {
+  async function atualizarAcesso() {
     $('carregando').classList.add('hide');
     $('cLogin').classList.toggle('hide', !!user);
     $('cVerif').classList.toggle('hide', !user || user.emailVerified);
@@ -217,7 +349,10 @@
       Object.keys(antigos).forEach(k => { if (DIA_RE.test(k) && !dias[k]) dias[k] = antigos[k]; });
       ls.set('mp_dias', null); ls.set(chaveLocal(), dias);
     }
-    carregarDia(chaveDia(new Date()));
+    cfg = Object.assign({}, CFG_PADRAO, ls.get(chaveCfg(), {}));
+    if (!cfg.ok) { $('carregando').classList.remove('hide'); await carregarPerfil(); $('carregando').classList.add('hide'); }
+    else carregarPerfil().then(() => { if (!$('v-ponto').classList.contains('hide')) renderPonto(); });
+    ls.set('mp_cfg', null); // ajuste antigo, de antes das contas
     rota();
     Ads.pedirConsentimento(false);
     iniciarSync();
@@ -227,15 +362,6 @@
   async function iniciarSync() {
     if (!liberado()) return;
     setSync('', 'sincronizando…');
-    try {
-      const perf = await db.collection('usuarios').doc(user.uid).get();
-      if (perf.exists) {
-        const p = perf.data();
-        ['jornada', 'intervalo'].forEach(c => { if (P.HORA.test(p[c] || '')) cfg[c] = p[c]; });
-        if (p.modo === 'S' || p.modo === 'C') cfg.modo = p.modo;
-        ls.set('mp_cfg', cfg);
-      } else enviarPerfil();
-    } catch (e) {}
     let primeira = true;
     if (unsub) unsub();
     unsub = refDias().orderBy(firebase.firestore.FieldPath.documentId(), 'desc').limit(400)
@@ -255,7 +381,10 @@
           primeira = false;
           Object.keys(dias).forEach(k => { if (!remotos.has(k) || (dias[k].t || 0) > remotos.get(k)) agendarEnvio(k); });
         }
-        if (mudou) { ls.set(chaveLocal(), dias); carregarDia(diaAtual); if (!$('v-hist').classList.contains('hide')) renderHist(); }
+        if (mudou) {
+          ls.set(chaveLocal(), dias); renderPonto(); Notif.agendar();
+          if (!$('v-hist').classList.contains('hide') && $('cEditar').classList.contains('hide')) renderHist();
+        }
         setSync('on', 'sincronizado');
       }, () => setSync('err', 'sem acesso ao servidor'));
   }
@@ -314,8 +443,8 @@
       if (unsub) { unsub(); unsub = null; }
       if (pend.size) { clearTimeout(tEnvio); await enviar(); }
       await Notif.desativar(true); // este aparelho para de receber lembretes desta conta
-      if (user) ls.set(chaveLocal(), null);
-      dias = {}; await auth.signOut(); location.hash = '#hoje';
+      if (user) { ls.set(chaveLocal(), null); ls.set(chaveCfg(), null); }
+      dias = {}; cfg = Object.assign({}, CFG_PADRAO); await auth.signOut(); location.hash = '#ponto';
     };
     $('bSair').onclick = sair;
     $('bSairVerif').onclick = sair;
@@ -338,7 +467,7 @@
     const ligado = () => !!ls.get(LST, null) && suportado() && Notification.permission === 'granted';
 
     function eventos() {
-      return P.agendaAvisos({ dias, modo: cfg.modo, agora: new Date(), alm: prefs.alm, sai: prefs.sai });
+      return P.agendaAvisos({ dias, modo: 'C', agora: new Date(), alm: prefs.alm, sai: prefs.sai });
     }
     async function escrever(extra) {
       if (!liberado() || !db) return;
@@ -412,7 +541,7 @@
     function dica() {
       const h = $('avisoHint');
       if (!liberado()) { h.textContent = ''; return; }
-      if (!ligado()) { h.textContent = vapid() ? '🔔 Ative os lembretes em Conta para ser avisado 2 min antes.' : ''; return; }
+      if (!ligado()) { h.textContent = vapid() ? '🔔 Ative os lembretes em Ajustes para ser avisado 2 min antes.' : ''; return; }
       const ev = eventos();
       h.textContent = ev.length
         ? '🔔 ' + ev.map(e => P.fmt(new Date(e.ts).getHours() * 60 + new Date(e.ts).getMinutes()) + (e.tipo === 'alm' ? ' (volta do almoço)' : ' (saída)')).join(' · ')
@@ -445,7 +574,7 @@
   async function apagarTudo() {
     if (!liberado() || !db) return;
     if (!confirm('Apagar TODOS os seus horários e excluir a sua conta? Não dá para desfazer.')) return;
-    const local = chaveLocal();
+    const local = chaveLocal(), localCfg = chaveCfg();
     try {
       {
         msg('msgConta', 'Apagando…');
@@ -463,7 +592,7 @@
         await db.collection('usuarios').doc(user.uid).delete();
         await user.delete();
       }
-      ['mp_dias', local, 'mp_cfg', 'mp_consent'].forEach(k => ls.set(k, null));
+      ['mp_dias', local, localCfg, 'mp_cfg', 'mp_consent'].forEach(k => ls.set(k, null));
       location.reload();
     } catch (e) { msg('msgConta', erroTxt(e), 'err'); }
   }
@@ -512,15 +641,17 @@
   })();
 
   // ---------- eventos ----------
-  $('tabS').onclick = () => setModo('S');
-  $('tabC').onclick = () => setModo('C');
-  CAMPOS.forEach(id => $(id).addEventListener('input', () => { calc(); gravarDia(); }));
-  document.querySelectorAll('.now[data-t]').forEach(b => b.onclick = () => { $(b.dataset.t).value = P.fmt(nowMin()); calc(); gravarDia(); });
-  document.querySelectorAll('#chipsJ button').forEach(b => b.onclick = () => { $('jornada').value = b.dataset.v; calc(); gravarDia(); });
-  document.querySelectorAll('#chipsI button').forEach(b => b.onclick = () => { $('intervalo').value = b.dataset.v; calc(); gravarDia(); });
-  $('dia').addEventListener('change', () => { if (DIA_RE.test($('dia').value)) carregarDia($('dia').value); });
-  $('hojeBtn').onclick = () => carregarDia(chaveDia(new Date()));
-  $('limpar').onclick = () => { HORAS.forEach(id => $(id).value = ''); calc(); gravarDia(); };
+  $('bBater').onclick = bater;
+  $('bSemAlm').onclick = semAlmocoHoje;
+  $('bDesfazer').onclick = desfazer;
+  ['jornada', 'intervalo'].forEach(id => $(id).addEventListener('input', syncChips));
+  document.querySelectorAll('#chipsJ button').forEach(b => b.onclick = () => { $('jornada').value = b.dataset.v; syncChips(); });
+  document.querySelectorAll('#chipsI button').forEach(b => b.onclick = () => { $('intervalo').value = b.dataset.v; syncChips(); });
+  $('jSalvar').onclick = salvarJornada;
+  $('bNovoDia').onclick = () => abrirEditor(null);
+  $('eSalvar').onclick = salvarEditor;
+  $('eCancelar').onclick = fecharEditor;
+  $('eExcluir').onclick = excluirDia;
   $('mes').addEventListener('change', renderHist);
   $('csv').onclick = exportarCSV;
   $('bExport').onclick = exportarTudo;
@@ -538,10 +669,10 @@
 
   // ---------- início ----------
   $('versao').textContent = 'Meu Ponto ' + VERSAO;
-  $('mes').value = diaAtual.slice(0, 7);
-  setModo(cfg.modo === 'C' ? 'C' : 'S');
+  $('mes').value = chaveDia(new Date()).slice(0, 7);
   rota();          // começa na tela de entrada até o login ser confirmado
   initFirebase();
-  setInterval(() => { if (!$('v-hoje').classList.contains('hide')) calc(); }, 30000);
+  setInterval(() => { if (!$('v-ponto').classList.contains('hide')) renderPonto(); }, 10000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && liberado() && cfg.ok) renderPonto(); });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();

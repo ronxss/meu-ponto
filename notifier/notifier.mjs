@@ -112,7 +112,7 @@ export async function run(env, opts = {}) {
       const n = mensagem(e);
       const webpush = { notification: { tag: 'mp-' + e.tipo, renotify: true, requireInteraction: e.tipo !== 'teste' } };
       if (env.APP_URL) {
-        webpush.fcm_options = { link: new URL('#hoje', env.APP_URL).href };
+        webpush.fcm_options = { link: new URL('#ponto', env.APP_URL).href };
         webpush.notification.icon = new URL('icons/icon-192.png', env.APP_URL).href;
         webpush.notification.badge = new URL('icons/badge-96.png', env.APP_URL).href;
       }

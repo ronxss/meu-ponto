@@ -51,7 +51,7 @@ test('run: envia só para os aparelhos do próprio usuário e limpa token invál
   assert.equal(body.fields.prox.integerValue, String(NOW + 3600e3));
   const msg = JSON.parse(calls.find(c => c[1].includes('fcm.googleapis.com'))[2]).message;
   assert.equal(msg.notification.title, '🍽️ Volta do almoço em 2 min');
-  assert.equal(msg.webpush.fcm_options.link, 'https://app.test/#hoje');
+  assert.equal(msg.webpush.fcm_options.link, 'https://app.test/#ponto');
   // PATCH (marcar) acontece antes do envio
   assert.ok(calls.findIndex(c => c[0] === 'PATCH') < calls.findIndex(c => c[1].includes('fcm.googleapis.com')));
 });

@@ -1,6 +1,6 @@
 // Service worker: funciona offline e recebe os lembretes (Firebase Cloud Messaging) com o app fechado.
 // Não guarda respostas de Auth, Firestore ou anúncios.
-const CACHE = 'meu-ponto-v4';
+const CACHE = 'meu-ponto-v5';
 const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'ponto.js', 'config.js', 'manifest.webmanifest',
   'privacidade.html', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/badge-96.png'];
 const SDK = 'https://www.gstatic.com/firebasejs/';
@@ -44,6 +44,6 @@ self.addEventListener('notificationclick', e => {
   e.notification.close();
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => {
     for (const c of cs) if ('focus' in c) return c.focus();
-    return self.clients.openWindow('./#hoje');
+    return self.clients.openWindow('./#ponto');
   }));
 });

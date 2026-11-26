@@ -95,6 +95,36 @@ input[type=time]{font-size:20px}
 .gate .tabs{display:none}
 .gate .sync{visibility:hidden}
 .tog{display:flex;align-items:center;gap:10px;font-size:15px;color:var(--ink);font-weight:500;margin:12px 0 0}
-.tog small{color:var(--muted);font-weight:400}
+.tog small{display:block;color:var(--muted);font-weight:400;font-size:13px}
 .tog input{width:20px;height:20px;accent-color:var(--accent);flex:none}
 #avisoHint{margin-top:10px}
+/* ===== Tela Ponto ===== */
+.intro{font-size:15px;margin:4px 0 14px;line-height:1.5}
+.relogio{text-align:center;margin:10px 0 18px}
+.relogio .data{color:var(--muted);font-size:15px;font-weight:600}
+.relogio .data::first-letter{text-transform:uppercase}
+.relogio .hora{font-size:64px;font-weight:700;line-height:1.05;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.bater{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:100%;min-height:132px;
+  border:0;border-radius:24px;background:var(--accent);color:#fff;font:inherit;font-size:22px;font-weight:700;cursor:pointer;
+  box-shadow:0 8px 24px rgba(31,111,92,.28);transition:transform .08s ease,opacity .2s;-webkit-tap-highlight-color:transparent;padding:16px}
+.bater small{font-size:14px;font-weight:500;opacity:.85}
+.bater:active{transform:scale(.98)}
+.bater:disabled{cursor:default;opacity:.6}
+.bater.fim{background:var(--accent-soft);color:var(--accent);box-shadow:none;border:1px solid var(--accent)}
+@media (prefers-color-scheme: dark){ .bater{color:#0d1f1a} .bater.fim{color:var(--accent)} }
+#msgPonto{min-height:1.3em;font-weight:600;text-align:center}
+.linha{list-style:none;margin:16px 0 0;padding:0;background:var(--card);border:1px solid var(--line);border-radius:16px}
+.linha li{display:flex;align-items:center;gap:12px;padding:13px 16px;border-top:1px solid var(--line)}
+.linha li:first-child{border-top:0}
+.linha .pt{width:12px;height:12px;border-radius:50%;border:2px solid var(--line);flex:none}
+.linha li.ok .pt{background:var(--accent);border-color:var(--accent)}
+.linha li.prox .pt{border-color:var(--accent)}
+.linha .nm{flex:1}
+.linha .hr{font-weight:700;font-variant-numeric:tabular-nums}
+.linha .hr.prev{font-weight:500;color:var(--muted)}
+.linha li.pulado{opacity:.5}
+.resumo{text-align:center;margin-top:14px;font-size:15px}
+.resumo b{font-variant-numeric:tabular-nums}
+.grade{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grade input[type=time]{font-size:17px;padding:8px 10px}
+.full{width:100%}
