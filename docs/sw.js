@@ -1,5 +1,5 @@
 // Service worker: funciona offline. Não guarda respostas de anúncios, Auth ou Firestore.
-const CACHE = 'meu-ponto-v1';
+const CACHE = 'meu-ponto-v2';
 const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'ponto.js', 'config.js', 'manifest.webmanifest',
   'privacidade.html', 'icons/icon-192.png', 'icons/icon-512.png'];
 const SDK = 'https://www.gstatic.com/firebasejs/';

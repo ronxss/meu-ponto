@@ -5,7 +5,7 @@ App (PWA) feito a partir do artefato **Calculadora de Ponto**, aberto ao públic
 - **Calculadora**: modo *Simples* (entrada + tempo de almoço) e *Completo* (saída/volta do almoço reais), contagem regressiva, limite com 2h extras e avisos de intervalo da CLT.
 - **Registro do dia**: grava a saída e calcula horas trabalhadas e saldo.
 - **Histórico e banco de horas** por mês, com exportação em CSV.
-- **Sem conta**: tudo fica no aparelho. **Com conta** (e-mail/senha ou Google): sincroniza entre aparelhos; cada pessoa só enxerga os próprios dados.
+- **Lançamentos só com login** (e-mail/senha com e-mail verificado, ou Google): sincroniza entre aparelhos; cada pessoa só enxerga os próprios dados. A cópia offline fica separada por conta e é apagada ao sair.
 - **Funciona offline** e instala como app (Android, iPhone e computador).
 - **LGPD**: baixar todos os dados e apagar dados + conta pelo próprio app; política de privacidade em `docs/privacidade.html`.
 
@@ -76,7 +76,7 @@ O app só carrega anúncios depois que a pessoa escolhe no aviso de consentiment
 
 ## Desenvolvimento
 ```bash
-npm start      # serve docs/ em http://localhost:5173 (sem Firebase: modo local)
+npm start      # serve docs/ em http://localhost:5173 (para lançar é preciso login no Firebase)
 ```
 ```bash
 npm test       # cálculo + checagens de segurança (CSP, regras, segredos)

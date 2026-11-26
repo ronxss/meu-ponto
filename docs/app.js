@@ -1,4 +1,5 @@
-// Meu Ponto — app (PWA). Dados ficam no aparelho e, com conta, no Firestore em usuarios/{uid}.
+// Meu Ponto — app (PWA). Lançamentos só com login (e-mail verificado); dados no Firestore em usuarios/{uid},
+// com cópia offline no aparelho separada por conta e apagada ao sair.
 // Segurança: nada aqui é segredo. Quem protege os dados são as regras (firestore.rules) + App Check.
 (function () {
   'use strict';
@@ -18,7 +19,7 @@
 
   // ---------- estado ----------
   let cfg = Object.assign({ jornada: '08:00', intervalo: '01:00', modo: 'S' }, ls.get('mp_cfg', {}));
-  let dias = ls.get('mp_dias', {});            // { 'AAAA-MM-DD': {entrada,...,t} }
+  let dias = {};                               // { 'AAAA-MM-DD': {entrada,...,t} } da conta logada
   let diaAtual = chaveDia(new Date());
   let db = null, user = null, unsub = null;
 
@@ -32,12 +33,16 @@
     calc();
   }
 
+  const liberado = () => !!(user && user.emailVerified);
+  const chaveLocal = () => 'mp_dias_' + user.uid;
+
   function gravarDia() {
+    if (!liberado()) return; // sem login não há lançamento
     const r = {};
     CAMPOS.forEach(c => { const v = $(c).value; if (P.HORA.test(v)) r[c] = v; });
     const vazio = !HORAS.some(c => r[c]);
     if (vazio) delete dias[diaAtual]; else { r.t = Date.now(); dias[diaAtual] = r; }
-    ls.set('mp_dias', dias);
+    ls.set(chaveLocal(), dias);
     cfg.jornada = $('jornada').value || cfg.jornada; cfg.intervalo = $('intervalo').value || cfg.intervalo;
     ls.set('mp_cfg', cfg);
     agendarEnvio(diaAtual); agendarPerfil();
@@ -130,6 +135,10 @@
   // ---------- Navegação ----------
   const VIEWS = { hoje: 'v-hoje', hist: 'v-hist', conta: 'v-conta' };
   function rota() {
+    const ok = liberado();
+    document.body.classList.toggle('gate', !ok);
+    $('v-login').classList.toggle('hide', ok);
+    if (!ok) { Object.values(VIEWS).forEach(id => $(id).classList.add('hide')); return; }
     const t = (location.hash || '#hoje').slice(1), tab = VIEWS[t] ? t : 'hoje';
     Object.entries(VIEWS).forEach(([k, id]) => $(id).classList.toggle('hide', k !== tab));
     document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
@@ -192,12 +201,28 @@
     } catch (e) {}
   }
 
-  async function iniciarSync() {
-    if (!user) return;
-    if (!user.emailVerified) {
-      setSync('', 'confirme seu e-mail'); mostrarConta(); return;
+  // Mostra a tela certa conforme o estado do login.
+  function atualizarAcesso() {
+    $('carregando').classList.add('hide');
+    $('cLogin').classList.toggle('hide', !!user);
+    $('cVerif').classList.toggle('hide', !user || user.emailVerified);
+    if (user) { $('verifEmail').textContent = user.email || ''; $('quem').textContent = user.email || ''; }
+    if (!liberado()) { dias = {}; rota(); return; }
+    // Cópia offline desta conta + horários antigos feitos sem login neste aparelho (migram uma vez).
+    dias = ls.get(chaveLocal(), {});
+    const antigos = ls.get('mp_dias', null);
+    if (antigos && typeof antigos === 'object') {
+      Object.keys(antigos).forEach(k => { if (DIA_RE.test(k) && !dias[k]) dias[k] = antigos[k]; });
+      ls.set('mp_dias', null); ls.set(chaveLocal(), dias);
     }
-    mostrarConta();
+    carregarDia(chaveDia(new Date()));
+    rota();
+    Ads.pedirConsentimento(false);
+    iniciarSync();
+  }
+
+  async function iniciarSync() {
+    if (!liberado()) return;
     setSync('', 'sincronizando…');
     try {
       const perf = await db.collection('usuarios').doc(user.uid).get();
@@ -227,37 +252,36 @@
           primeira = false;
           Object.keys(dias).forEach(k => { if (!remotos.has(k) || (dias[k].t || 0) > remotos.get(k)) agendarEnvio(k); });
         }
-        if (mudou) { ls.set('mp_dias', dias); carregarDia(diaAtual); if (!$('v-hist').classList.contains('hide')) renderHist(); }
+        if (mudou) { ls.set(chaveLocal(), dias); carregarDia(diaAtual); if (!$('v-hist').classList.contains('hide')) renderHist(); }
         setSync('on', 'sincronizado');
       }, () => setSync('err', 'sem acesso ao servidor'));
   }
 
-  function mostrarConta() {
-    const logado = !!user;
-    $('cLocal').classList.toggle('hide', logado); $('cConta').classList.toggle('hide', !logado);
-    if (!logado) return;
-    $('quem').textContent = user.email || '';
-    $('verif').textContent = user.emailVerified ? 'Seus horários estão sincronizados com segurança.'
-      : 'Enviamos um link para o seu e-mail. Confirme para começar a sincronizar (seus horários continuam salvos neste aparelho).';
-    $('bReenviar').classList.toggle('hide', user.emailVerified);
-  }
-
   async function initFirebase() {
-    if (!temFirebase()) { $('semFirebase').classList.remove('hide'); $('fLogin').classList.add('hide'); $('bGoogle').classList.add('hide'); return; }
+    if (!temFirebase()) {
+      $('carregando').classList.add('hide'); $('cLogin').classList.remove('hide');
+      $('semFirebase').classList.remove('hide'); $('fLogin').classList.add('hide'); $('bGoogle').classList.add('hide'); return;
+    }
     firebase.initializeApp(CFG.firebase);
     // App Check: só o app publicado (com reCAPTCHA) consegue falar com o Firestore/Auth quando a verificação estiver "Aplicada".
     if (CFG.appCheckSiteKey) { try { firebase.appCheck().activate(CFG.appCheckSiteKey, true); } catch (e) {} }
     const auth = firebase.auth(); auth.languageCode = 'pt';
     db = firebase.firestore();
     auth.onAuthStateChanged(u => {
-      user = u; if (unsub && !u) { unsub(); unsub = null; }
-      if (u) iniciarSync(); else { setSync('', 'salvo neste aparelho'); mostrarConta(); }
+      if (unsub) { unsub(); unsub = null; }
+      user = u; atualizarAcesso();
     });
     // Voltou para o app depois de clicar no link de verificação
-    document.addEventListener('visibilitychange', async () => {
-      if (document.visibilityState !== 'visible' || !user || user.emailVerified) return;
-      try { await user.reload(); if (auth.currentUser.emailVerified) { await auth.currentUser.getIdToken(true); user = auth.currentUser; iniciarSync(); } } catch (e) {}
-    });
+    async function conferirVerificacao(avisar) {
+      if (!user || user.emailVerified) return;
+      try {
+        await user.reload();
+        if (auth.currentUser.emailVerified) { await auth.currentUser.getIdToken(true); user = auth.currentUser; atualizarAcesso(); }
+        else if (avisar) msg('msgVerif', 'Ainda não confirmado. Abra o link do e-mail e tente de novo.', 'err');
+      } catch (e) { if (avisar) msg('msgVerif', erroTxt(e), 'err'); }
+    }
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') conferirVerificacao(false); });
+    $('bJaConfirmei').onclick = () => conferirVerificacao(true);
 
     $('fLogin').addEventListener('submit', async ev => {
       ev.preventDefault(); msg('msgLogin', 'Entrando…');
@@ -282,10 +306,18 @@
       try { await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); }
       catch (e) { msg('msgLogin', erroTxt(e), 'err'); }
     };
-    $('bSair').onclick = async () => { if (unsub) { unsub(); unsub = null; } await auth.signOut(); };
+    // Sair apaga a cópia local desta conta (aparelho compartilhado não fica com seus horários).
+    const sair = async () => {
+      if (unsub) { unsub(); unsub = null; }
+      if (pend.size) { clearTimeout(tEnvio); await enviar(); }
+      if (user) ls.set(chaveLocal(), null);
+      dias = {}; await auth.signOut(); location.hash = '#hoje';
+    };
+    $('bSair').onclick = sair;
+    $('bSairVerif').onclick = sair;
     $('bReenviar').onclick = async () => {
-      try { await user.sendEmailVerification(); msg('msgConta', 'Link reenviado. Confira também o spam.', 'ok'); }
-      catch (e) { msg('msgConta', erroTxt(e), 'err'); }
+      try { await user.sendEmailVerification(); msg('msgVerif', 'Link reenviado. Confira também o spam.', 'ok'); }
+      catch (e) { msg('msgVerif', erroTxt(e), 'err'); }
     };
   }
 
@@ -294,11 +326,11 @@
     baixar('meu-ponto-dados.json', 'application/json', JSON.stringify({ exportado: new Date().toISOString(), conta: user ? user.email : null, ajustes: cfg, dias }, null, 2));
   }
   async function apagarTudo() {
-    const txt = user ? 'Apagar TODOS os seus horários deste aparelho e da nuvem, e excluir a sua conta? Não dá para desfazer.'
-      : 'Apagar todos os horários salvos neste aparelho? Não dá para desfazer.';
-    if (!confirm(txt)) return;
+    if (!liberado() || !db) return;
+    if (!confirm('Apagar TODOS os seus horários e excluir a sua conta? Não dá para desfazer.')) return;
+    const local = chaveLocal();
     try {
-      if (user && db) {
+      {
         msg('msgConta', 'Apagando…');
         if (unsub) { unsub(); unsub = null; }
         for (;;) {
@@ -308,7 +340,7 @@
         await db.collection('usuarios').doc(user.uid).delete();
         await user.delete();
       }
-      ['mp_dias', 'mp_cfg', 'mp_consent'].forEach(k => ls.set(k, null));
+      ['mp_dias', local, 'mp_cfg', 'mp_consent'].forEach(k => ls.set(k, null));
       location.reload();
     } catch (e) { msg('msgConta', erroTxt(e), 'err'); }
   }
@@ -380,9 +412,7 @@
   $('versao').textContent = 'Meu Ponto ' + VERSAO;
   $('mes').value = diaAtual.slice(0, 7);
   setModo(cfg.modo === 'C' ? 'C' : 'S');
-  carregarDia(diaAtual);
-  rota();
-  Ads.pedirConsentimento(false);
+  rota();          // começa na tela de entrada até o login ser confirmado
   initFirebase();
   setInterval(() => { if (!$('v-hoje').classList.contains('hide')) calc(); }, 30000);
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

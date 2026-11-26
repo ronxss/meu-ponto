@@ -14,7 +14,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="gate">
 <header class="top">
   <div class="wrap hd">
     <h1>⏱️ Meu Ponto</h1>
@@ -23,8 +23,45 @@
 </header>
 
 <main class="wrap">
+  <!-- ===== ENTRADA (obrigatória para lançar horários) ===== -->
+  <section id="v-login" class="view">
+    <p class="hint center" id="carregando">Carregando…</p>
+
+    <div class="card hide" id="cLogin">
+      <h2>Entre para registrar seu ponto</h2>
+      <p class="hint">Calcule a hora de sair, registre entrada, almoço e saída e acompanhe seu banco de horas em qualquer aparelho. Só você acessa os seus dados.</p>
+      <div id="semFirebase" class="warn hide">O login ainda não foi configurado neste servidor (veja o README).</div>
+      <form id="fLogin" autocomplete="on" class="mt">
+        <label for="email">E-mail</label>
+        <input type="email" id="email" required autocomplete="username" maxlength="200">
+        <label for="senha" class="mt">Senha (mínimo 8 caracteres, com letras e números)</label>
+        <input type="password" id="senha" required minlength="8" autocomplete="current-password" maxlength="200">
+        <div class="btns">
+          <button type="submit" class="pri" id="bEntrar">Entrar</button>
+          <button type="button" class="sec" id="bCriar">Criar conta</button>
+        </div>
+        <button type="button" class="link" id="bEsqueci">Esqueci a senha</button>
+      </form>
+      <button type="button" class="google" id="bGoogle">Entrar com Google</button>
+      <p class="msg" id="msgLogin" role="status"></p>
+    </div>
+
+    <div class="card hide" id="cVerif">
+      <h2>Confirme seu e-mail</h2>
+      <p>Enviamos um link para <b id="verifEmail"></b>. Abra o e-mail (confira também o spam), toque no link e volte aqui.</p>
+      <div class="btns">
+        <button type="button" class="pri" id="bJaConfirmei">Já confirmei</button>
+        <button type="button" class="sec" id="bReenviar">Reenviar e-mail</button>
+        <button type="button" class="sec" id="bSairVerif">Usar outra conta</button>
+      </div>
+      <p class="msg" id="msgVerif" role="status"></p>
+    </div>
+
+    <p class="hint center"><a href="privacidade.html">Política de privacidade</a></p>
+  </section>
+
   <!-- ===== HOJE ===== -->
-  <section id="v-hoje" class="view">
+  <section id="v-hoje" class="view hide">
     <div class="card">
       <div class="row">
         <div class="field"><label for="dia">Dia</label><input type="date" id="dia"></div>
@@ -115,33 +152,11 @@
 
   <!-- ===== CONTA ===== -->
   <section id="v-conta" class="view hide">
-    <div class="card" id="cLocal">
-      <h2>Sincronizar entre aparelhos</h2>
-      <p class="hint">Sem conta, seus horários ficam só neste aparelho. Com conta, ficam guardados com segurança e aparecem em qualquer celular ou computador. Só você acessa os seus dados.</p>
-      <div id="semFirebase" class="warn hide">O login ainda não foi configurado neste servidor (veja o README).</div>
-      <form id="fLogin" autocomplete="on">
-        <label for="email">E-mail</label>
-        <input type="email" id="email" required autocomplete="username" maxlength="200">
-        <label for="senha" class="mt">Senha (mínimo 8 caracteres)</label>
-        <input type="password" id="senha" required minlength="8" autocomplete="current-password" maxlength="200">
-        <div class="btns">
-          <button type="submit" class="pri" id="bEntrar">Entrar</button>
-          <button type="button" class="sec" id="bCriar">Criar conta</button>
-        </div>
-        <button type="button" class="link" id="bEsqueci">Esqueci a senha</button>
-      </form>
-      <button type="button" class="google" id="bGoogle">Entrar com Google</button>
-      <p class="msg" id="msgLogin" role="status"></p>
-    </div>
-
-    <div class="card hide" id="cConta">
+    <div class="card" id="cConta">
       <h2>Sua conta</h2>
       <p>Conectado como <b id="quem"></b></p>
-      <p class="hint" id="verif"></p>
-      <div class="btns">
-        <button type="button" class="sec" id="bSair">Sair</button>
-        <button type="button" class="sec" id="bReenviar">Reenviar verificação</button>
-      </div>
+      <p class="hint">Seus horários ficam guardados com segurança e só você tem acesso.</p>
+      <div class="btns"><button type="button" class="sec" id="bSair">Sair</button></div>
     </div>
 
     <div class="card">
