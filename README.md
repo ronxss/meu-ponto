@@ -6,6 +6,7 @@ App (PWA) feito a partir do artefato **Calculadora de Ponto**, aberto ao públic
 - **Registro do dia**: grava a saída e calcula horas trabalhadas e saldo.
 - **Histórico e banco de horas** por mês, com exportação em CSV.
 - **Lançamentos só com login** (e-mail/senha com e-mail verificado, ou Google): sincroniza entre aparelhos; cada pessoa só enxerga os próprios dados. A cópia offline fica separada por conta e é apagada ao sair.
+- **Lembretes por notificação 2 min antes** de bater o ponto de **volta do almoço** e de **saída**, com o app fechado (Android, computador e iPhone com o app instalado na Tela de Início).
 - **Funciona offline** e instala como app (Android, iPhone e computador).
 - **LGPD**: baixar todos os dados e apagar dados + conta pelo próprio app; política de privacidade em `docs/privacidade.html`.
 
@@ -15,12 +16,18 @@ App (PWA) feito a partir do artefato **Calculadora de Ponto**, aberto ao públic
  Visitante ─ app (docs/) ── HTTPS + App Check ──> Firebase Auth   (login)
                          └─────────────────────> Firestore: usuarios/{uid}          (ajustes)
                                                             usuarios/{uid}/dias/{data} (horários)
+                         └─────────────────────> Firestore: avisos/{uid}            (horários dos lembretes)
+                                                            usuarios/{uid}/push/{token} (aparelhos com lembrete)
                          └─ anúncios (iframes do Google AdSense, sem acesso aos dados)
+
+ Notificador (Cloudflare, a cada minuto) ── avisos vencidos ── Firebase Cloud Messaging ──> aparelhos do usuário
 ```
 
 | Pasta/arquivo | O que é |
 |---|---|
 | `docs/` | O app: `index.html`, `app.js` (tela, login, sincronização, anúncios), `ponto.js` (motor de cálculo do artefato), `sw.js` (offline), `config.js` (Firebase/AdSense — valores públicos), `privacidade.html`, `ads.txt` |
+| `notifier/` | Notificador sem dependências: `worker.mjs` (Cloudflare Workers, a cada minuto) e `run.mjs` (Node, para testar) |
+| `wrangler.toml` | Configuração do Worker |
 | `firestore.rules` | Cada usuário só lê/escreve `usuarios/{seu uid}`; formato dos dados validado; o resto é negado |
 | `storage.rules` | Storage bloqueado (o app não usa) |
 | `firebase.json` | Hospedagem + cabeçalhos de segurança (CSP, HSTS, anti-clickjacking…) |
@@ -70,7 +77,23 @@ O AdSense só aprova sites em um domínio que você controla — o endereço `*.
 
 O app só carrega anúncios depois que a pessoa escolhe no aviso de consentimento; quem recusa a personalização recebe anúncios genéricos. Os anúncios ficam em iframes do Google e **não têm acesso** aos horários do usuário.
 
-### 5. Instalar no celular
+### 5. Lembretes (notificações)
+1. **Chave VAPID**: Firebase › ⚙️ Configurações do projeto › **Cloud Messaging** › *Configuração da Web* › **Certificados push da Web** › **Gerar par de chaves**. Copie a chave (é pública) para `vapidKey` em `docs/config.js`.
+2. **Cloudflare** (grátis): crie a conta em <https://dash.cloudflare.com>.
+   - **ID da conta**: aparece na página inicial do painel (Workers e Pages › lado direito, “Account ID”).
+   - **Token**: ícone do perfil › *Meu perfil* › **Tokens de API** › *Criar token* › modelo **Editar Cloudflare Workers** › *Continuar* › *Criar token*.
+3. No GitHub (Settings › Secrets and variables › Actions › Secrets), crie:
+   - `CLOUDFLARE_API_TOKEN` = o token
+   - `CLOUDFLARE_ACCOUNT_ID` = o ID da conta
+   - `RUN_KEY` = uma senha longa qualquer (16+ caracteres), para testar o notificador
+4. Rode Actions › **Publicar**. O job *Notificador* publica o Worker `meu-ponto-notificador`, que roda a cada minuto.
+5. No app: **Conta › Lembretes › Ativar neste aparelho** e depois **Enviar teste** (chega em até 1 minuto).
+   - No iPhone, só funciona com o app instalado na Tela de Início (iOS 16.4+) e aberto pelo ícone.
+   - O lembrete da volta do almoço precisa da **saída para o almoço** registrada (modo *Completo*). O da saída usa a previsão do app.
+
+Testar o notificador na hora: `curl -H "x-run-key: SUA_RUN_KEY" https://meu-ponto-notificador.SEU-USUARIO.workers.dev/run`
+
+### 6. Instalar no celular
 - **Android/Chrome**: menu ⋮ › *Instalar app*.
 - **iPhone/Safari**: Compartilhar › *Adicionar à Tela de Início*.
 

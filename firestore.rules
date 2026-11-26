@@ -38,6 +38,41 @@ service cloud.firestore {
       }
     }
 
+    // Aparelhos com notificação ligada (o id do documento é o próprio token do FCM).
+    match /usuarios/{uid}/push/{tok} {
+      allow get, delete: if dono(uid);
+      allow list: if dono(uid) && request.query.limit <= 20;
+      allow create, update: if dono(uid)
+        && request.resource.data.keys().hasOnly(['token', 'ua', 'at'])
+        && request.resource.data.token is string
+        && request.resource.data.token.size() <= 400
+        && request.resource.data.token == tok
+        && request.resource.data.ua is string && request.resource.data.ua.size() <= 120
+        && request.resource.data.at == request.time;
+    }
+
+    // Lembretes de push calculados pelo app (o notificador lê com a conta de serviço).
+    // O texto da notificação é montado no servidor: aqui só entram horário e tipo.
+    function evento(e) {
+      return e is map && e.keys().hasOnly(['ts', 'tipo', 'h'])
+        && e.ts is int && e.tipo in ['alm', 'sai', 'teste'] && e.h is string && e.h.size() <= 5;
+    }
+    match /avisos/{uid} {
+      allow get, delete: if dono(uid);
+      allow create, update: if dono(uid)
+        && request.resource.data.keys().hasOnly(['eventos', 'prox', 'alm', 'sai', 'atualizado'])
+        && request.resource.data.eventos is list
+        && request.resource.data.eventos.size() <= 4
+        && (request.resource.data.eventos.size() < 1 || evento(request.resource.data.eventos[0]))
+        && (request.resource.data.eventos.size() < 2 || evento(request.resource.data.eventos[1]))
+        && (request.resource.data.eventos.size() < 3 || evento(request.resource.data.eventos[2]))
+        && (request.resource.data.eventos.size() < 4 || evento(request.resource.data.eventos[3]))
+        && (request.resource.data.prox == null || request.resource.data.prox is int)
+        && request.resource.data.alm is bool
+        && request.resource.data.sai is bool
+        && request.resource.data.atualizado == request.time;
+    }
+
     // Qualquer outro caminho: negado.
     match /{caminho=**} { allow read, write: if false; }
   }

@@ -117,6 +117,7 @@
       <div class="sub" id="falta">Preencha a hora de entrada</div>
       <div class="details hide" id="det"></div>
     </div>
+    <p class="hint center" id="avisoHint"></p>
     <div class="warn hide" id="warn"></div>
 
     <div class="card mt">
@@ -159,6 +160,20 @@
       <div class="btns"><button type="button" class="sec" id="bSair">Sair</button></div>
     </div>
 
+    <div class="card" id="cNotif">
+      <h2>🔔 Lembretes</h2>
+      <p class="hint">Receba uma notificação <b>2 minutos antes</b> de bater o ponto, mesmo com o app fechado.</p>
+      <label class="tog"><input type="checkbox" id="nAlm" checked> Volta do almoço <small>(precisa registrar a saída para o almoço)</small></label>
+      <label class="tog"><input type="checkbox" id="nSai" checked> Saída (fim da jornada)</label>
+      <p class="hint" id="nEstado"></p>
+      <div class="btns">
+        <button type="button" class="pri" id="nAtivar">Ativar neste aparelho</button>
+        <button type="button" class="sec hide" id="nTeste">Enviar teste</button>
+        <button type="button" class="sec hide" id="nDesativar">Desativar neste aparelho</button>
+      </div>
+      <p class="msg" id="msgNotif" role="status"></p>
+    </div>
+
     <div class="card">
       <h2>Privacidade</h2>
       <p class="hint">Mostramos anúncios para manter o app grátis. Você escolhe se eles podem ser personalizados.</p>
@@ -197,6 +212,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-check-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js"></script>
 <script src="config.js"></script>
 <script src="ponto.js"></script>
 <script src="app.js"></script>

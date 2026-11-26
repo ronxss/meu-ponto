@@ -43,6 +43,7 @@
     const vazio = !HORAS.some(c => r[c]);
     if (vazio) delete dias[diaAtual]; else { r.t = Date.now(); dias[diaAtual] = r; }
     ls.set(chaveLocal(), dias);
+    Notif.agendar();
     cfg.jornada = $('jornada').value || cfg.jornada; cfg.intervalo = $('intervalo').value || cfg.intervalo;
     ls.set('mp_cfg', cfg);
     agendarEnvio(diaAtual); agendarPerfil();
@@ -52,7 +53,7 @@
     cfg.modo = m; ls.set('mp_cfg', cfg);
     $('tabS').classList.toggle('on', m === 'S'); $('tabC').classList.toggle('on', m === 'C');
     $('completo').classList.toggle('hide', m !== 'C');
-    calc(); agendarPerfil();
+    calc(); agendarPerfil(); Notif.agendar();
   }
 
   function syncChips() {
@@ -80,6 +81,7 @@
       det.classList.remove('hide');
       if (p.avisos.length) { warn.replaceChildren(...p.avisos.map(a => el('div', '', a))); warn.classList.remove('hide'); }
     }
+    Notif.dica();
     const f = P.fechamento(d);
     $('fechHint').textContent = f
       ? 'Trabalhado: ' + P.dur(f.trabalhado) + ' · saldo do dia: ' + (f.saldo > 0 ? '+' : '') + P.dur(f.saldo)
@@ -219,6 +221,7 @@
     rota();
     Ads.pedirConsentimento(false);
     iniciarSync();
+    Notif.iniciar();
   }
 
   async function iniciarSync() {
@@ -310,6 +313,7 @@
     const sair = async () => {
       if (unsub) { unsub(); unsub = null; }
       if (pend.size) { clearTimeout(tEnvio); await enviar(); }
+      await Notif.desativar(true); // este aparelho para de receber lembretes desta conta
       if (user) ls.set(chaveLocal(), null);
       dias = {}; await auth.signOut(); location.hash = '#hoje';
     };
@@ -320,6 +324,119 @@
       catch (e) { msg('msgVerif', erroTxt(e), 'err'); }
     };
   }
+
+  // ---------- Lembretes por notificação (Firebase Cloud Messaging) ----------
+  // O app calcula os horários (2 min antes da volta do almoço e da saída) e grava em avisos/{uid}.
+  // O notificador (notifier/, Cloudflare Workers) roda a cada minuto e envia para os aparelhos do usuário.
+  const Notif = (() => {
+    const LST = 'mp_push_tok';
+    let prefs = { alm: true, sai: true }, ultimo = '', tAg = null, swr = null, fgOn = false;
+    const suportado = () => 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
+    const vapid = () => CFG.vapidKey && !String(CFG.vapidKey).startsWith('COLE') ? CFG.vapidKey : '';
+    const swReady = () => swr || (swr = navigator.serviceWorker.register('sw.js').then(() => navigator.serviceWorker.ready));
+    const refAv = () => db.collection('usuarios').doc(user.uid);
+    const ligado = () => !!ls.get(LST, null) && suportado() && Notification.permission === 'granted';
+
+    function eventos() {
+      return P.agendaAvisos({ dias, modo: cfg.modo, agora: new Date(), alm: prefs.alm, sai: prefs.sai });
+    }
+    async function escrever(extra) {
+      if (!liberado() || !db) return;
+      const ev = eventos().concat(extra || []).sort((a, b) => a.ts - b.ts).slice(0, 4);
+      const doc = { eventos: ev, prox: ev.length ? ev[0].ts : null, alm: prefs.alm, sai: prefs.sai };
+      const j = JSON.stringify(doc);
+      if (!extra && j === ultimo) return;
+      await db.collection('avisos').doc(user.uid).set(Object.assign(doc, { atualizado: firebase.firestore.FieldValue.serverTimestamp() }));
+      ultimo = j;
+    }
+    function agendar() { if (!liberado()) return; clearTimeout(tAg); tAg = setTimeout(() => escrever().catch(() => {}), 1000); dica(); }
+
+    async function salvarToken(tok) {
+      const ant = ls.get(LST, null);
+      if (ant && ant !== tok) refAv().collection('push').doc(ant).delete().catch(() => {});
+      await refAv().collection('push').doc(tok).set({ token: tok, ua: navigator.userAgent.slice(0, 120), at: firebase.firestore.FieldValue.serverTimestamp() });
+      ls.set(LST, tok);
+    }
+    function ouvirPrimeiroPlano() {
+      if (fgOn) return; fgOn = true;
+      try {
+        firebase.messaging().onMessage(async m => {
+          const n = m.notification || {}, reg = await swReady();
+          reg.showNotification(n.title || 'Meu Ponto', { body: n.body || '', icon: 'icons/icon-192.png', badge: 'icons/badge-96.png', tag: 'mp-' + ((m.data && m.data.tipo) || 'x') });
+        });
+      } catch (e) {}
+    }
+    async function ativar() {
+      msg('msgNotif', 'Ativando…');
+      try {
+        if (!vapid()) throw new Error('Os lembretes ainda não foram configurados neste servidor (falta a chave VAPID).');
+        if (!suportado() || !firebase.messaging || !(await firebase.messaging.isSupported()))
+          throw new Error('Este navegador não recebe notificações. No iPhone, adicione o app à Tela de Início e abra por lá (iOS 16.4+).');
+        const p = await Notification.requestPermission();
+        if (p !== 'granted') throw new Error('Permissão negada. Libere as notificações deste site nas configurações do navegador.');
+        const reg = await swReady();
+        const tok = await firebase.messaging().getToken({ vapidKey: vapid(), serviceWorkerRegistration: reg });
+        if (!tok) throw new Error('Não foi possível registrar este aparelho.');
+        await salvarToken(tok); ouvirPrimeiroPlano(); await escrever();
+        msg('msgNotif', 'Lembretes ligados neste aparelho. Use "Enviar teste" para conferir.', 'ok');
+      } catch (e) { msg('msgNotif', e.message || erroTxt(e), 'err'); }
+      render();
+    }
+    async function desativar(silencioso) {
+      const t = ls.get(LST, null); ls.set(LST, null);
+      try { if (t && user) await refAv().collection('push').doc(t).delete(); } catch (e) {}
+      try { if (firebase.messaging) await firebase.messaging().deleteToken(); } catch (e) {}
+      if (!silencioso) { msg('msgNotif', 'Lembretes desligados neste aparelho.', ''); render(); }
+    }
+    async function testar() {
+      try {
+        const agora = Date.now();
+        await escrever([{ ts: agora, tipo: 'teste', h: P.fmt(new Date().getHours() * 60 + new Date().getMinutes()) }]);
+        msg('msgNotif', 'Teste enviado: chega em até 1 minuto nos aparelhos com lembrete ligado.', 'ok');
+      } catch (e) { msg('msgNotif', 'Não deu para enviar o teste: ' + erroTxt(e), 'err'); }
+    }
+    function render() {
+      const on = ligado();
+      let est;
+      if (!vapid()) est = 'Lembretes ainda não configurados neste servidor.';
+      else if (!suportado()) est = 'Este navegador não suporta notificações. No iPhone, instale o app na Tela de Início.';
+      else if (Notification.permission === 'denied') est = 'Notificações bloqueadas para este site. Libere nas configurações do navegador.';
+      else est = on ? '✅ Ligado neste aparelho.' : 'Desligado neste aparelho.';
+      $('nEstado').textContent = est;
+      $('nAtivar').classList.toggle('hide', on);
+      $('nTeste').classList.toggle('hide', !on);
+      $('nDesativar').classList.toggle('hide', !on);
+      $('nAlm').checked = prefs.alm; $('nSai').checked = prefs.sai;
+      dica();
+    }
+    function dica() {
+      const h = $('avisoHint');
+      if (!liberado()) { h.textContent = ''; return; }
+      if (!ligado()) { h.textContent = vapid() ? '🔔 Ative os lembretes em Conta para ser avisado 2 min antes.' : ''; return; }
+      const ev = eventos();
+      h.textContent = ev.length
+        ? '🔔 ' + ev.map(e => P.fmt(new Date(e.ts).getHours() * 60 + new Date(e.ts).getMinutes()) + (e.tipo === 'alm' ? ' (volta do almoço)' : ' (saída)')).join(' · ')
+        : '🔔 Lembretes ligados. Nenhum aviso pendente agora.';
+    }
+    async function iniciar() {
+      try {
+        const d = await db.collection('avisos').doc(user.uid).get();
+        if (d.exists) { const x = d.data(); prefs.alm = x.alm !== false; prefs.sai = x.sai !== false; }
+      } catch (e) {}
+      render(); agendar();
+      // Renova o token (o navegador pode trocá-lo) e volta a ouvir em primeiro plano.
+      if (ligado() && vapid() && firebase.messaging) {
+        try {
+          if (await firebase.messaging.isSupported()) {
+            const tok = await firebase.messaging().getToken({ vapidKey: vapid(), serviceWorkerRegistration: await swReady() });
+            if (tok) await salvarToken(tok); ouvirPrimeiroPlano();
+          }
+        } catch (e) {}
+      }
+    }
+    function pref(k, v) { prefs[k] = v; agendar(); }
+    return { ativar, desativar, testar, render, dica, iniciar, agendar, pref, escrever };
+  })();
 
   // ---------- LGPD: exportar e apagar ----------
   function exportarTudo() {
@@ -337,6 +454,12 @@
           const s = await refDias().limit(400).get(); if (s.empty) break;
           const b = db.batch(); s.docs.forEach(d => b.delete(d.ref)); await b.commit();
         }
+        await Notif.desativar(true);
+        for (;;) {
+          const s = await db.collection('usuarios').doc(user.uid).collection('push').limit(20).get(); if (s.empty) break;
+          const b = db.batch(); s.docs.forEach(d => b.delete(d.ref)); await b.commit();
+        }
+        await db.collection('avisos').doc(user.uid).delete();
         await db.collection('usuarios').doc(user.uid).delete();
         await user.delete();
       }
@@ -403,6 +526,11 @@
   $('bExport').onclick = exportarTudo;
   $('bApagar').onclick = apagarTudo;
   $('bConsent').onclick = () => Ads.ativo ? Ads.pedirConsentimento(true) : msg('msgConta', 'Anúncios ainda não configurados.', '');
+  $('nAtivar').onclick = () => Notif.ativar();
+  $('nDesativar').onclick = () => Notif.desativar(false);
+  $('nTeste').onclick = () => Notif.testar();
+  $('nAlm').onchange = e => Notif.pref('alm', e.target.checked);
+  $('nSai').onchange = e => Notif.pref('sai', e.target.checked);
   $('cSim').onclick = () => Ads.escolher('sim');
   $('cNao').onclick = () => Ads.escolher('nao');
   window.addEventListener('hashchange', rota);

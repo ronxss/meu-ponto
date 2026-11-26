@@ -7,6 +7,7 @@ const ler = f => readFileSync(new URL('../' + f, import.meta.url), 'utf8');
 const ctx = { module: { exports: {} } };
 vm.runInNewContext(ler('docs/ponto.js'), ctx);
 const P = ctx.module.exports;
+const tipos = ev => JSON.parse(JSON.stringify(ev.map(e => [e.tipo, e.h])));
 
 test('previsão simples: 08:00 + 8h + 1h = 17:00', () => {
   const p = P.previsao({ jornada: '08:00', intervalo: '01:00', entrada: '08:00' }, 'S');
@@ -76,4 +77,37 @@ test('cabeçalhos de segurança na hospedagem', () => {
 test('config.js não tem segredos', () => {
   const c = ler('docs/config.js');
   assert.doesNotMatch(c, /private_key|client_secret|BEGIN .*PRIVATE/);
+});
+
+test('avisos: volta do almoço e saída 2 min antes', () => {
+  const agora = new Date(2026, 10, 26, 12, 10);
+  const dias = { '2026-11-26': { entrada: '08:00', saiAlm: '12:00', jornada: '08:00', intervalo: '01:00' } };
+  const ev = P.agendaAvisos({ dias, modo: 'C', agora });
+  assert.deepEqual(tipos(ev), [['alm', '13:00'], ['sai', '17:00']]);
+  assert.equal(ev[0].ts, new Date(2026, 10, 26, 12, 58).getTime());
+  assert.equal(ev[1].ts, new Date(2026, 10, 26, 16, 58).getTime());
+});
+
+test('avisos: volta registrada usa almoço real; saída registrada não avisa', () => {
+  const agora = new Date(2026, 10, 26, 13, 0);
+  let dias = { '2026-11-26': { entrada: '08:00', saiAlm: '12:00', volAlm: '12:40', jornada: '08:00', intervalo: '01:00' } };
+  assert.deepEqual(tipos(P.agendaAvisos({ dias, modo: 'C', agora })), [['sai', '16:40']]);
+  dias['2026-11-26'].saida = '16:40';
+  assert.equal(P.agendaAvisos({ dias, modo: 'C', agora }).length, 0);
+});
+
+test('avisos: respeita preferências, horário passado e virada da noite', () => {
+  const dias = { '2026-11-25': { entrada: '22:00', jornada: '08:00', intervalo: '01:00' } };
+  const ev = P.agendaAvisos({ dias, modo: 'S', agora: new Date(2026, 10, 26, 2, 0) });
+  assert.deepEqual(tipos(ev), [['sai', '07:00']]);
+  assert.equal(ev[0].ts, new Date(2026, 10, 26, 6, 58).getTime());
+  assert.equal(P.agendaAvisos({ dias, modo: 'S', agora: new Date(2026, 10, 26, 2, 0), sai: false }).length, 0);
+  assert.equal(P.agendaAvisos({ dias, modo: 'S', agora: new Date(2026, 10, 26, 7, 0) }).length, 0);
+});
+
+test('regras: avisos e push isolados por usuário', () => {
+  const r = ler('firestore.rules');
+  assert.match(r, /match \/avisos\/\{uid\}/);
+  assert.match(r, /match \/usuarios\/\{uid\}\/push\/\{tok\}/);
+  assert.match(r, /request\.resource\.data\.token == tok/);
 });

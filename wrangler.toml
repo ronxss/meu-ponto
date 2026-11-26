@@ -1,0 +1,12 @@
+# Notificador no Cloudflare Workers (plano gratuito). Veja o README.
+name = "meu-ponto-notificador"
+main = "notifier/worker.mjs"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+# Endereço do app (o toque na notificação abre ele).
+APP_URL = "https://meu-ponto-a8137.web.app/"

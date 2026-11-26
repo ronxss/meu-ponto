@@ -49,7 +49,34 @@
     return { trabalhado, almoco, saldo: J === null ? 0 : trabalhado - J };
   }
 
-  const api = { HORA, toMin, fmt, dur, previsao, fechamento };
+  // Avisos de push: volta do almoço e saída, ANTECEDENCIA minutos antes.
+  // dias = {'AAAA-MM-DD': registro}; agora = Date. Considera hoje e ontem (jornada que vira a meia-noite).
+  const ANTECEDENCIA = 2;
+  const chave = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  function agendaAvisos({ dias, modo, agora, alm = true, sai = true }) {
+    const out = [], now = agora.getTime();
+    for (const delta of [-1, 0]) {
+      const d = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() + delta);
+      const r = dias[chave(d)];
+      if (!r || !r.entrada || r.saida) continue;
+      const em = m => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, m - ANTECEDENCIA).getTime();
+      const E = toMin(r.entrada);
+      if (alm) {
+        const SA = depois(toMin(r.saiAlm), E);
+        if (SA !== null && !r.volAlm) {
+          const volta = SA + (toMin(r.intervalo) ?? 0);
+          out.push({ ts: em(volta), tipo: 'alm', h: fmt(volta) });
+        }
+      }
+      if (sai) {
+        const p = previsao(r, modo === 'C' || r.saiAlm ? 'C' : 'S');
+        if (p) out.push({ ts: em(p.saida), tipo: 'sai', h: fmt(p.saida) });
+      }
+    }
+    return out.filter(e => e.ts > now).sort((a, b) => a.ts - b.ts).slice(0, 3);
+  }
+
+  const api = { HORA, toMin, fmt, dur, previsao, fechamento, agendaAvisos, ANTECEDENCIA };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Ponto = api;
 })(typeof self !== 'undefined' ? self : this);

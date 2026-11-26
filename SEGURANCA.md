@@ -41,11 +41,18 @@ Objetivo: **ninguém consegue ver ou alterar dados de outro usuário, nem ler o 
 ### Google Cloud (console.cloud.google.com, mesmo projeto)
 - [ ] **APIs e serviços › Credenciais › a chave “Browser key”**:
   - *Restrições de aplicativo*: **Referenciadores HTTP** → `https://SEU-DOMINIO/*`, `https://SEU-PROJETO.web.app/*`, `https://SEU-PROJETO.firebaseapp.com/*`.
-  - *Restrições de API*: só **Identity Toolkit API**, **Token Service API**, **Cloud Firestore API**, **Firebase App Check API**, **Firebase Installations API**.
+  - *Restrições de API*: só **Identity Toolkit API**, **Token Service API**, **Cloud Firestore API**, **Firebase App Check API**, **Firebase Installations API**, **FCM Registration API** e **Firebase Cloud Messaging API**.
 - [ ] **IAM**: a conta de serviço do deploy só com *Administrador do Firebase Hosting* + *Administrador do Firebase Rules*. Ninguém além de você como Proprietário.
 - [ ] Ative **verificação em duas etapas** na sua conta Google (ela é a “chave mestra” do banco).
 - [ ] **Faturamento**: fique no plano Spark (sem cobrança) ou, no Blaze, crie **alerta de orçamento** — protege contra ataques que tentam gerar custo.
 - [ ] (Recomendado) Trocar a chave JSON por **Workload Identity Federation** (deploy do GitHub sem chave guardada).
+
+### Lembretes (notificador)
+- Cada usuário só grava `avisos/{seu uid}` e `usuarios/{seu uid}/push`. O app manda só **horário e tipo**; o **texto** da notificação é montado no servidor — ninguém consegue usar o serviço para mandar mensagens arbitrárias, nem para aparelhos de outra pessoa.
+- O notificador marca o aviso como enviado **antes** de enviar (sem duplicados) e apaga tokens de aparelhos que não existem mais.
+- Ao **sair da conta**, o aparelho deixa de receber lembretes daquela conta; ao **apagar a conta**, os aparelhos e lembretes são apagados.
+- O endereço `/run` do Worker só responde com o cabeçalho `x-run-key` correto (16+ caracteres, comparação em tempo constante). Sem ele, retorna só `ok`.
+- [ ] (Recomendado) Crie uma conta de serviço **só para o notificador** com os papéis **Usuário do Cloud Datastore** e **Administrador da API Firebase Cloud Messaging**, e coloque o JSON no secret `NOTIFIER_SERVICE_ACCOUNT`. Assim o Worker não tem permissão de publicar o site nem mudar regras.
 
 ### GitHub
 - [ ] Repositório **privado** (o código do site continua visível no navegador, mas configs, histórico e workflows ficam reservados).
