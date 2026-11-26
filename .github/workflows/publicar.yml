@@ -42,6 +42,22 @@ jobs:
           umask 077
           printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
           node -e "JSON.parse(require('fs').readFileSync(process.argv[1]))" "$RUNNER_TEMP/sa.json" || { echo "::error::O segredo não é um JSON válido"; exit 1; }
+          # Mostra só a identificação da conta (não é segredo) para conferir no IAM.
+          node -e '
+            const sa = JSON.parse(require("fs").readFileSync(process.argv[1]));
+            const proj = process.argv[2];
+            console.log("Conta de serviço: " + sa.client_email);
+            console.log("Projeto do JSON:  " + sa.project_id);
+            if (sa.type !== "service_account" || !sa.private_key) {
+              console.log("::error::O JSON não é uma chave de conta de serviço (falta type/private_key).");
+              process.exit(1);
+            }
+            if (sa.project_id !== proj) {
+              console.log("::error::O JSON é do projeto \"" + sa.project_id + "\", não de \"" + proj + "\". Gere a chave no projeto " + proj + " e troque o secret FIREBASE_SERVICE_ACCOUNT.");
+              process.exit(1);
+            }
+            console.log("Dê a esta conta o papel \"Administrador do Firebase\" em: https://console.cloud.google.com/iam-admin/iam?project=" + proj);
+          ' "$RUNNER_TEMP/sa.json" "$PROJ"
       - name: Publicar no Firebase
         run: npx -y firebase-tools@13.29.1 deploy --only hosting,firestore:rules --project "${{ vars.FIREBASE_PROJECT_ID }}" --non-interactive
         env:
